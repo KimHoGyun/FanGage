@@ -61,19 +61,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
         ),
-        _CalendarModeCard(mode: backgroundMode),
         _MemoryMonthCalendar(
           focusedMonth: _focusedMonth,
           selectedDay: _selectedDay,
           backgroundMode: backgroundMode,
           customizations: customizations,
-          onDaySelected: (day) => setState(() => _selectedDay = day),
+          onDaySelected: _openDayCustomizer,
           onMonthChanged: (month) => setState(() => _focusedMonth = month),
+          onBackgroundModeChanged:
+              (mode) =>
+                  ref.read(calendarBackgroundModeProvider.notifier).state =
+                      mode,
           eventsForDay: _eventsForDay,
           memoryForDay: _memoryForDay,
         ),
         _SelectedDayCard(date: _selectedDay, items: dayItems),
-        _DayCustomizeCard(selectedDay: _selectedDay),
         _NewsCard(),
         _MemoryPreview(memory: MockData.memories.first),
       ],
@@ -104,74 +106,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? 'Apple Watch 연결'
         : 'Galaxy Watch 연결';
   }
-}
 
-class _CalendarModeCard extends ConsumerWidget {
-  const _CalendarModeCard({required this.mode});
+  void _openDayCustomizer(DateTime day) {
+    setState(() => _selectedDay = day);
 
-  final CalendarBackgroundMode mode;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '캘린더 배경 설정',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<CalendarBackgroundMode>(
-              segments: const [
-                ButtonSegment(
-                  value: CalendarBackgroundMode.none,
-                  icon: Icon(Icons.grid_view),
-                  label: Text('기본'),
-                ),
-                ButtonSegment(
-                  value: CalendarBackgroundMode.manualPhoto,
-                  icon: Icon(Icons.photo_library_outlined),
-                  label: Text('직접'),
-                ),
-                ButtonSegment(
-                  value: CalendarBackgroundMode.aiMemory,
-                  icon: Icon(Icons.auto_awesome),
-                  label: Text('AI'),
-                ),
-              ],
-              selected: {mode},
-              onSelectionChanged: (selection) {
-                ref.read(calendarBackgroundModeProvider.notifier).state =
-                    selection.first;
-              },
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder:
+          (context) => Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: _DayCustomizeCard(selectedDay: day),
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            _modeDescription(mode),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF65706C),
-              height: 1.35,
-            ),
-          ),
-        ],
-      ),
     );
-  }
-
-  String _modeDescription(CalendarBackgroundMode mode) {
-    return switch (mode) {
-      CalendarBackgroundMode.none => '일정과 기억만 간단히 표시합니다.',
-      CalendarBackgroundMode.manualPhoto =>
-        '선택한 날짜에 직접 입력한 내용과 사진 프리셋 배경을 보여줍니다.',
-      CalendarBackgroundMode.aiMemory =>
-        '나의 기억이 있는 날짜는 AI가 만든 것처럼 보이는 기억 이미지 배경을 자동 적용합니다.',
-    };
   }
 }
 
@@ -183,6 +137,7 @@ class _MemoryMonthCalendar extends StatelessWidget {
     required this.customizations,
     required this.onDaySelected,
     required this.onMonthChanged,
+    required this.onBackgroundModeChanged,
     required this.eventsForDay,
     required this.memoryForDay,
   });
@@ -193,15 +148,18 @@ class _MemoryMonthCalendar extends StatelessWidget {
   final Map<String, CalendarDayCustomization> customizations;
   final ValueChanged<DateTime> onDaySelected;
   final ValueChanged<DateTime> onMonthChanged;
+  final ValueChanged<CalendarBackgroundMode> onBackgroundModeChanged;
   final List<Object> Function(DateTime day) eventsForDay;
   final MemoryEntry? Function(DateTime day) memoryForDay;
 
   @override
   Widget build(BuildContext context) {
     final firstDay = DateTime(focusedMonth.year, focusedMonth.month);
+    final lastDay = DateTime(focusedMonth.year, focusedMonth.month + 1, 0);
     final gridStart = firstDay.subtract(Duration(days: firstDay.weekday % 7));
+    final gridEnd = lastDay.add(Duration(days: 6 - (lastDay.weekday % 7)));
     final days = List.generate(
-      42,
+      gridEnd.difference(gridStart).inDays + 1,
       (index) => gridStart.add(Duration(days: index)),
     );
 
@@ -221,11 +179,16 @@ class _MemoryMonthCalendar extends StatelessWidget {
                   DateFormat('yyyy년 M월', 'ko_KR').format(focusedMonth),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 26,
+                    fontSize: 23,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
+              _CalendarModeMenu(
+                mode: backgroundMode,
+                onSelected: onBackgroundModeChanged,
+              ),
+              const SizedBox(width: 6),
               IconButton.filledTonal(
                 onPressed:
                     () => onMonthChanged(
@@ -271,7 +234,7 @@ class _MemoryMonthCalendar extends StatelessWidget {
             itemCount: days.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
-              childAspectRatio: 0.58,
+              childAspectRatio: 0.82,
             ),
             itemBuilder: (context, index) {
               final day = days[index];
@@ -390,13 +353,13 @@ class _CalendarDayTile extends StatelessWidget {
                   if (title != null)
                     Text(
                       title,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Colors.white.withValues(
                           alpha: isCurrentMonth ? 1 : 0.45,
                         ),
-                        fontSize: 10,
+                        fontSize: 9,
                         fontWeight: FontWeight.w800,
                         height: 1.1,
                       ),
@@ -459,6 +422,88 @@ class _CalendarDayTile extends StatelessWidget {
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     );
+  }
+}
+
+class _CalendarModeMenu extends StatelessWidget {
+  const _CalendarModeMenu({required this.mode, required this.onSelected});
+
+  final CalendarBackgroundMode mode;
+  final ValueChanged<CalendarBackgroundMode> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<CalendarBackgroundMode>(
+      tooltip: '캘린더 배경 설정',
+      initialValue: mode,
+      onSelected: onSelected,
+      itemBuilder:
+          (context) => const [
+            PopupMenuItem(
+              value: CalendarBackgroundMode.none,
+              child: ListTile(
+                leading: Icon(Icons.grid_view),
+                title: Text('기본'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuItem(
+              value: CalendarBackgroundMode.manualPhoto,
+              child: ListTile(
+                leading: Icon(Icons.photo_library_outlined),
+                title: Text('직접'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuItem(
+              value: CalendarBackgroundMode.aiMemory,
+              child: ListTile(
+                leading: Icon(Icons.auto_awesome),
+                title: Text('AI'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_modeIcon(mode), color: Colors.white, size: 18),
+            const SizedBox(width: 5),
+            Text(
+              _modeLabel(mode),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static IconData _modeIcon(CalendarBackgroundMode mode) {
+    return switch (mode) {
+      CalendarBackgroundMode.none => Icons.grid_view,
+      CalendarBackgroundMode.manualPhoto => Icons.photo_library_outlined,
+      CalendarBackgroundMode.aiMemory => Icons.auto_awesome,
+    };
+  }
+
+  static String _modeLabel(CalendarBackgroundMode mode) {
+    return switch (mode) {
+      CalendarBackgroundMode.none => '기본',
+      CalendarBackgroundMode.manualPhoto => '직접',
+      CalendarBackgroundMode.aiMemory => 'AI',
+    };
   }
 }
 
@@ -640,12 +685,17 @@ class _DayCustomizeCardState extends ConsumerState<_DayCustomizeCard> {
 
   @override
   Widget build(BuildContext context) {
+    final formattedDate = DateFormat(
+      'M월 d일 EEEE',
+      'ko_KR',
+    ).format(widget.selectedDay);
+
     return SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '선택한 날짜 직접 꾸미기',
+            '$formattedDate 꾸미기',
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
@@ -773,6 +823,7 @@ class _DayCustomizeCardState extends ConsumerState<_DayCustomizeCard> {
       return;
     }
     FocusScope.of(context).unfocus();
+    Navigator.of(context).pop();
   }
 }
 
