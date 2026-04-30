@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:table_calendar/table_calendar.dart';
 
 import '../../core/mock/mock_data.dart';
 import '../../core/models/app_models.dart';
@@ -17,16 +17,17 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  DateTime _focusedDay = DateTime.now();
-  DateTime? _selectedDay;
+  DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime _selectedDay = DateTime.now();
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final themeName = ref.watch(homeThemeProvider);
     final snapshot = ref.watch(wearableSnapshotProvider);
-    final selected = _selectedDay ?? DateTime.now();
-    final dayItems = _eventsForDay(selected);
+    final backgroundMode = ref.watch(calendarBackgroundModeProvider);
+    final customizations = ref.watch(calendarCustomizationsProvider);
+    final dayItems = _eventsForDay(_selectedDay);
 
     return ScreenLayout(
       children: [
@@ -60,46 +61,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
         ),
-        SectionCard(
-          padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
-          child: TableCalendar<Object>(
-            locale: 'ko_KR',
-            firstDay: DateTime.utc(2024, 1, 1),
-            lastDay: DateTime.utc(2027, 12, 31),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            eventLoader: _eventsForDay,
-            calendarFormat: CalendarFormat.month,
-            availableCalendarFormats: const {CalendarFormat.month: '월'},
-            headerStyle: const HeaderStyle(
-              titleCentered: true,
-              formatButtonVisible: false,
-            ),
-            calendarStyle: CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.18),
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
-              ),
-              markerDecoration: const BoxDecoration(
-                color: Color(0xFFE06D3C),
-                shape: BoxShape.circle,
-              ),
-            ),
-            onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _selectedDay = selectedDay;
-                _focusedDay = focusedDay;
-              });
-            },
-          ),
+        _CalendarModeCard(mode: backgroundMode),
+        _MemoryMonthCalendar(
+          focusedMonth: _focusedMonth,
+          selectedDay: _selectedDay,
+          backgroundMode: backgroundMode,
+          customizations: customizations,
+          onDaySelected: (day) => setState(() => _selectedDay = day),
+          onMonthChanged: (month) => setState(() => _focusedMonth = month),
+          eventsForDay: _eventsForDay,
+          memoryForDay: _memoryForDay,
         ),
-        _SelectedDayCard(date: selected, items: dayItems),
+        _SelectedDayCard(date: _selectedDay, items: dayItems),
+        _DayCustomizeCard(selectedDay: _selectedDay),
         _NewsCard(),
         _MemoryPreview(memory: MockData.memories.first),
       ],
@@ -108,18 +82,471 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   List<Object> _eventsForDay(DateTime day) {
     final schedules = MockData.schedules.where(
-      (item) => isSameDay(item.startsAt, day),
+      (item) => DateUtils.isSameDay(item.startsAt, day),
     );
     final memories = MockData.memories.where(
-      (item) => isSameDay(item.date, day),
+      (item) => DateUtils.isSameDay(item.date, day),
     );
     return [...schedules, ...memories];
+  }
+
+  MemoryEntry? _memoryForDay(DateTime day) {
+    for (final memory in MockData.memories) {
+      if (DateUtils.isSameDay(memory.date, day)) {
+        return memory;
+      }
+    }
+    return null;
   }
 
   String _deviceLabel(WearableDeviceType type) {
     return type == WearableDeviceType.appleWatch
         ? 'Apple Watch 연결'
         : 'Galaxy Watch 연결';
+  }
+}
+
+class _CalendarModeCard extends ConsumerWidget {
+  const _CalendarModeCard({required this.mode});
+
+  final CalendarBackgroundMode mode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '캘린더 배경 설정',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<CalendarBackgroundMode>(
+              segments: const [
+                ButtonSegment(
+                  value: CalendarBackgroundMode.none,
+                  icon: Icon(Icons.grid_view),
+                  label: Text('기본'),
+                ),
+                ButtonSegment(
+                  value: CalendarBackgroundMode.manualPhoto,
+                  icon: Icon(Icons.photo_library_outlined),
+                  label: Text('직접'),
+                ),
+                ButtonSegment(
+                  value: CalendarBackgroundMode.aiMemory,
+                  icon: Icon(Icons.auto_awesome),
+                  label: Text('AI'),
+                ),
+              ],
+              selected: {mode},
+              onSelectionChanged: (selection) {
+                ref.read(calendarBackgroundModeProvider.notifier).state =
+                    selection.first;
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _modeDescription(mode),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF65706C),
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _modeDescription(CalendarBackgroundMode mode) {
+    return switch (mode) {
+      CalendarBackgroundMode.none => '일정과 기억만 간단히 표시합니다.',
+      CalendarBackgroundMode.manualPhoto =>
+        '선택한 날짜에 직접 입력한 내용과 사진 프리셋 배경을 보여줍니다.',
+      CalendarBackgroundMode.aiMemory =>
+        '나의 기억이 있는 날짜는 AI가 만든 것처럼 보이는 기억 이미지 배경을 자동 적용합니다.',
+    };
+  }
+}
+
+class _MemoryMonthCalendar extends StatelessWidget {
+  const _MemoryMonthCalendar({
+    required this.focusedMonth,
+    required this.selectedDay,
+    required this.backgroundMode,
+    required this.customizations,
+    required this.onDaySelected,
+    required this.onMonthChanged,
+    required this.eventsForDay,
+    required this.memoryForDay,
+  });
+
+  final DateTime focusedMonth;
+  final DateTime selectedDay;
+  final CalendarBackgroundMode backgroundMode;
+  final Map<String, CalendarDayCustomization> customizations;
+  final ValueChanged<DateTime> onDaySelected;
+  final ValueChanged<DateTime> onMonthChanged;
+  final List<Object> Function(DateTime day) eventsForDay;
+  final MemoryEntry? Function(DateTime day) memoryForDay;
+
+  @override
+  Widget build(BuildContext context) {
+    final firstDay = DateTime(focusedMonth.year, focusedMonth.month);
+    final gridStart = firstDay.subtract(Duration(days: firstDay.weekday % 7));
+    final days = List.generate(
+      42,
+      (index) => gridStart.add(Duration(days: index)),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2220),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  DateFormat('yyyy년 M월', 'ko_KR').format(focusedMonth),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed:
+                    () => onMonthChanged(
+                      DateTime(focusedMonth.year, focusedMonth.month - 1),
+                    ),
+                icon: const Icon(Icons.chevron_left),
+                tooltip: '이전 달',
+              ),
+              const SizedBox(width: 6),
+              IconButton.filledTonal(
+                onPressed:
+                    () => onMonthChanged(
+                      DateTime(focusedMonth.year, focusedMonth.month + 1),
+                    ),
+                icon: const Icon(Icons.chevron_right),
+                tooltip: '다음 달',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children:
+                const ['일', '월', '화', '수', '목', '금', '토']
+                    .map(
+                      (day) => Expanded(
+                        child: Center(
+                          child: Text(
+                            day,
+                            style: TextStyle(
+                              color: Color(0xFFD6D9D3),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+          ),
+          const SizedBox(height: 8),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: days.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              childAspectRatio: 0.58,
+            ),
+            itemBuilder: (context, index) {
+              final day = days[index];
+              final key = CalendarCustomizationController.keyFor(day);
+              return _CalendarDayTile(
+                day: day,
+                isCurrentMonth: day.month == focusedMonth.month,
+                isSelected: DateUtils.isSameDay(day, selectedDay),
+                isToday: DateUtils.isSameDay(day, DateTime.now()),
+                events: eventsForDay(day),
+                memory: memoryForDay(day),
+                customization: customizations[key],
+                backgroundMode: backgroundMode,
+                onTap: () => onDaySelected(day),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarDayTile extends StatelessWidget {
+  const _CalendarDayTile({
+    required this.day,
+    required this.isCurrentMonth,
+    required this.isSelected,
+    required this.isToday,
+    required this.events,
+    required this.memory,
+    required this.customization,
+    required this.backgroundMode,
+    required this.onTap,
+  });
+
+  final DateTime day;
+  final bool isCurrentMonth;
+  final bool isSelected;
+  final bool isToday;
+  final List<Object> events;
+  final MemoryEntry? memory;
+  final CalendarDayCustomization? customization;
+  final CalendarBackgroundMode backgroundMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasManualBackground =
+        backgroundMode == CalendarBackgroundMode.manualPhoto &&
+        customization != null;
+    final hasAiBackground =
+        backgroundMode == CalendarBackgroundMode.aiMemory && memory != null;
+    final title =
+        customization?.title ??
+        (memory != null ? memory!.title : _firstScheduleTitle(events));
+
+    return Padding(
+      padding: const EdgeInsets.all(1),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            image:
+                hasManualBackground && customization!.imageBytes != null
+                    ? DecorationImage(
+                      image: MemoryImage(customization!.imageBytes!),
+                      fit: BoxFit.cover,
+                    )
+                    : null,
+            gradient:
+                hasManualBackground && customization!.imageBytes == null
+                    ? _manualGradient(customization!.photoPreset)
+                    : hasAiBackground
+                    ? _aiGradient(memory!)
+                    : null,
+            color:
+                hasManualBackground || hasAiBackground
+                    ? null
+                    : const Color(0xFF262927),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color:
+                  isSelected
+                      ? const Color(0xFFFF6B5F)
+                      : const Color(0xFF3B3F3D),
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Stack(
+            children: [
+              if (hasManualBackground || hasAiBackground)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _DayNumber(
+                      day: day.day,
+                      isToday: isToday,
+                      isCurrentMonth: isCurrentMonth,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (title != null)
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(
+                          alpha: isCurrentMonth ? 1 : 0.45,
+                        ),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                      ),
+                    ),
+                  const Spacer(),
+                  if (hasAiBackground)
+                    const _TinyBadge(label: 'AI')
+                  else if (hasManualBackground)
+                    const _TinyBadge(label: '사진')
+                  else if (events.isNotEmpty)
+                    _EventDots(count: events.length),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _firstScheduleTitle(List<Object> events) {
+    for (final event in events) {
+      if (event is EventSchedule) {
+        return event.title;
+      }
+    }
+    return null;
+  }
+
+  LinearGradient _manualGradient(CalendarPhotoPreset preset) {
+    return switch (preset) {
+      CalendarPhotoPreset.concertLights => const LinearGradient(
+        colors: [Color(0xFF714DFF), Color(0xFFE74776), Color(0xFFFFB15A)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      CalendarPhotoPreset.stadiumNight => const LinearGradient(
+        colors: [Color(0xFF12383A), Color(0xFF267D76), Color(0xFFFFD166)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      CalendarPhotoPreset.cheeringGoods => const LinearGradient(
+        colors: [Color(0xFF2F6F6A), Color(0xFF6AA84F), Color(0xFFF4D35E)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    };
+  }
+
+  LinearGradient _aiGradient(MemoryEntry memory) {
+    final seed = memory.title.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
+    final palettes = [
+      const [Color(0xFF263E73), Color(0xFFE95D5D), Color(0xFFFFC857)],
+      const [Color(0xFF174C4F), Color(0xFF45A29E), Color(0xFFE0B84B)],
+      const [Color(0xFF35275E), Color(0xFF8D5A97), Color(0xFFF4A261)],
+    ];
+    final colors = palettes[seed % palettes.length];
+    return LinearGradient(
+      colors: colors,
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+  }
+}
+
+class _DayNumber extends StatelessWidget {
+  const _DayNumber({
+    required this.day,
+    required this.isToday,
+    required this.isCurrentMonth,
+  });
+
+  final int day;
+  final bool isToday;
+  final bool isCurrentMonth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration:
+          isToday
+              ? const BoxDecoration(
+                color: Color(0xFFFF4F45),
+                shape: BoxShape.circle,
+              )
+              : null,
+      child: Text(
+        '$day',
+        style: TextStyle(
+          color:
+              isToday
+                  ? Colors.black
+                  : Colors.white.withValues(alpha: isCurrentMonth ? 0.9 : 0.35),
+          fontWeight: FontWeight.w900,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+class _TinyBadge extends StatelessWidget {
+  const _TinyBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _EventDots extends StatelessWidget {
+  const _EventDots({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: List.generate(
+        count.clamp(1, 3),
+        (index) => Container(
+          width: 5,
+          height: 5,
+          margin: const EdgeInsets.only(right: 3),
+          decoration: const BoxDecoration(
+            color: Color(0xFF4EB7E6),
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -170,6 +597,182 @@ class _SelectedDayCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _DayCustomizeCard extends ConsumerStatefulWidget {
+  const _DayCustomizeCard({required this.selectedDay});
+
+  final DateTime selectedDay;
+
+  @override
+  ConsumerState<_DayCustomizeCard> createState() => _DayCustomizeCardState();
+}
+
+class _DayCustomizeCardState extends ConsumerState<_DayCustomizeCard> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _noteController;
+  CalendarPhotoPreset _preset = CalendarPhotoPreset.concertLights;
+  XFile? _pickedPhoto;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController();
+    _noteController = TextEditingController();
+    _syncFields();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DayCustomizeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!DateUtils.isSameDay(oldWidget.selectedDay, widget.selectedDay)) {
+      _syncFields();
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '선택한 날짜 직접 꾸미기',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(
+              labelText: '캘린더에 표시할 내용',
+              prefixIcon: Icon(Icons.edit_note),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _noteController,
+            minLines: 2,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: '기억 메모',
+              prefixIcon: Icon(Icons.notes),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<CalendarPhotoPreset>(
+            value: _preset,
+            decoration: const InputDecoration(
+              labelText: '배경 사진 프리셋',
+              prefixIcon: Icon(Icons.image_outlined),
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: CalendarPhotoPreset.concertLights,
+                child: Text('콘서트 조명'),
+              ),
+              DropdownMenuItem(
+                value: CalendarPhotoPreset.stadiumNight,
+                child: Text('야구장 밤'),
+              ),
+              DropdownMenuItem(
+                value: CalendarPhotoPreset.cheeringGoods,
+                child: Text('응원 굿즈'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _preset = value);
+              }
+            },
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _pickPhoto,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: Text(_pickedPhoto == null ? '배경 사진 선택' : '선택한 사진 변경'),
+          ),
+          if (_pickedPhoto != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _pickedPhoto!.name,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _saveCustomization,
+              icon: const Icon(Icons.wallpaper_outlined),
+              label: const Text('이 날짜 배경으로 저장'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _syncFields() {
+    final key = CalendarCustomizationController.keyFor(widget.selectedDay);
+    final customization = ref.read(calendarCustomizationsProvider)[key];
+    _titleController.text =
+        customization?.title ??
+        DateFormat('M월 d일의 기억', 'ko_KR').format(widget.selectedDay);
+    _noteController.text = customization?.note ?? '';
+    _preset = customization?.photoPreset ?? CalendarPhotoPreset.concertLights;
+    _pickedPhoto = null;
+  }
+
+  Future<void> _pickPhoto() async {
+    final photo = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1400,
+      imageQuality: 82,
+    );
+    if (photo != null && mounted) {
+      setState(() => _pickedPhoto = photo);
+    }
+  }
+
+  Future<void> _saveCustomization() async {
+    final key = CalendarCustomizationController.keyFor(widget.selectedDay);
+    final previous = ref.read(calendarCustomizationsProvider)[key];
+    final imageBytes =
+        await _pickedPhoto?.readAsBytes() ?? previous?.imageBytes;
+    ref
+        .read(calendarCustomizationsProvider.notifier)
+        .save(
+          CalendarDayCustomization(
+            date: widget.selectedDay,
+            title:
+                _titleController.text.trim().isEmpty
+                    ? '나만의 기억'
+                    : _titleController.text.trim(),
+            note: _noteController.text.trim(),
+            photoPreset: _preset,
+            imageBytes: imageBytes,
+          ),
+        );
+    ref.read(calendarBackgroundModeProvider.notifier).state =
+        CalendarBackgroundMode.manualPhoto;
+    if (!mounted) {
+      return;
+    }
+    FocusScope.of(context).unfocus();
   }
 }
 

@@ -1,6 +1,12 @@
+import 'dart:typed_data';
+
 enum WearableDeviceType { appleWatch, galaxyWatch }
 
 enum ScheduleType { concert, game, ticket }
+
+enum CalendarBackgroundMode { none, manualPhoto, aiMemory }
+
+enum CalendarPhotoPreset { concertLights, stadiumNight, cheeringGoods }
 
 class User {
   const User({
@@ -124,4 +130,35 @@ class WearableSnapshot {
   final DateTime syncedAt;
   final int currentBpm;
   final int dailyHighBpm;
+}
+
+class CalendarDayCustomization {
+  const CalendarDayCustomization({
+    required this.date,
+    required this.title,
+    required this.note,
+    required this.photoPreset,
+    this.imageBytes,
+  });
+
+  final DateTime date;
+  final String title;
+  final String note;
+  final CalendarPhotoPreset photoPreset;
+  final Uint8List? imageBytes;
+
+  CalendarDayCustomization copyWith({
+    String? title,
+    String? note,
+    CalendarPhotoPreset? photoPreset,
+    Uint8List? imageBytes,
+  }) {
+    return CalendarDayCustomization(
+      date: date,
+      title: title ?? this.title,
+      note: note ?? this.note,
+      photoPreset: photoPreset ?? this.photoPreset,
+      imageBytes: imageBytes ?? this.imageBytes,
+    );
+  }
 }

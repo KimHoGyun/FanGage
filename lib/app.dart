@@ -68,6 +68,9 @@ class FanMemoryApp extends ConsumerWidget {
     ref.listen(homeThemeProvider, (_, next) {
       settings.setHomeTheme(next);
     });
+    ref.listen(calendarBackgroundModeProvider, (_, next) {
+      settings.setCalendarBackgroundMode(next);
+    });
 
     return MaterialApp.router(
       title: 'Fan Memory',

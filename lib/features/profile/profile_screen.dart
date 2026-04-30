@@ -17,6 +17,7 @@ class ProfileScreen extends ConsumerWidget {
     final goods = ref.watch(selectedGoodsProvider);
     final notifications = ref.watch(pushNotificationProvider);
     final homeTheme = ref.watch(homeThemeProvider);
+    final calendarMode = ref.watch(calendarBackgroundModeProvider);
     final snapshot = ref.watch(wearableSnapshotProvider);
 
     return ScreenLayout(
@@ -139,6 +140,49 @@ class ProfileScreen extends ConsumerWidget {
                   }
                 },
               ),
+            ],
+          ),
+        ),
+        SectionCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '캘린더 배경 방식',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<CalendarBackgroundMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: CalendarBackgroundMode.none,
+                      icon: Icon(Icons.grid_view),
+                      label: Text('기본'),
+                    ),
+                    ButtonSegment(
+                      value: CalendarBackgroundMode.manualPhoto,
+                      icon: Icon(Icons.photo_library_outlined),
+                      label: Text('직접'),
+                    ),
+                    ButtonSegment(
+                      value: CalendarBackgroundMode.aiMemory,
+                      icon: Icon(Icons.auto_awesome),
+                      label: Text('AI'),
+                    ),
+                  ],
+                  selected: {calendarMode},
+                  onSelectionChanged: (selection) {
+                    ref.read(calendarBackgroundModeProvider.notifier).state =
+                        selection.first;
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text('직접 꾸민 사진 배경 또는 기억 기반 AI 배경을 홈 캘린더에 적용합니다.'),
             ],
           ),
         ),

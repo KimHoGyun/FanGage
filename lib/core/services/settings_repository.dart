@@ -13,6 +13,7 @@ class SettingsRepository {
   static const _goodsKey = 'selectedGoods';
   static const _notificationsKey = 'pushNotifications';
   static const _themeKey = 'homeTheme';
+  static const _calendarBackgroundModeKey = 'calendarBackgroundMode';
 
   WearableDeviceType get deviceType {
     final value = _readString(_deviceKey);
@@ -24,6 +25,13 @@ class SettingsRepository {
   String get selectedGoods => _readString(_goodsKey) ?? '응원 팔찌';
   bool get pushNotifications => _readBool(_notificationsKey) ?? true;
   String get homeTheme => _readString(_themeKey) ?? '민트 응원 테마';
+  CalendarBackgroundMode get calendarBackgroundMode {
+    final value = _readString(_calendarBackgroundModeKey);
+    return CalendarBackgroundMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => CalendarBackgroundMode.aiMemory,
+    );
+  }
 
   Future<void> setDeviceType(WearableDeviceType type) {
     return _writeString(_deviceKey, type.name);
@@ -39,6 +47,10 @@ class SettingsRepository {
 
   Future<void> setHomeTheme(String value) {
     return _writeString(_themeKey, value);
+  }
+
+  Future<void> setCalendarBackgroundMode(CalendarBackgroundMode value) {
+    return _writeString(_calendarBackgroundModeKey, value.name);
   }
 
   String? _readString(String key) {
